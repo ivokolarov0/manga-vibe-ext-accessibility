@@ -40,7 +40,7 @@ FIELDS = getattr(Overlay, "__dataclass_fields__", {})
 HAS_NOTE = "note" in FIELDS        # plugin API 4: a quiet line in the reader's top bar
 HAS_SPEECH = "speech" in FIELDS    # plugin API 5: text the reader reads aloud
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 DATA_VERSION = 1          # the format of what is saved per page
 MAX_SIDE = 1600           # pages are shrunk so their longest side is at most this, before they go to Ollama
 OFFLINE_RETRY = 15        # seconds between tries while Ollama can't be reached
@@ -76,7 +76,8 @@ class MangaAccessibility(Plugin):
                    help="The descriptions are written in this language, and the text is translated into it"),
         SettingDef("detail", "What is read out", default="full",
                    options=[("full", "Everything: what each panel shows, and who says what"),
-                            ("text", "Only the text: who says what")]),
+                            ("text", "Only the text: who says what"),
+                            ("scene", "Only the pictures: what each panel shows, without the text")]),
         SettingDef("ahead", "Pages to describe ahead", default="4",
                    help="Pages after the one you're reading that are described in advance"),
     ]
@@ -850,7 +851,10 @@ SAYS = {"speech": "says", "thought": "thinks"}
 
 
 def speech_for(data, page, detail="full") -> str:
-    """The page as text to listen to, in reading order. "Page 5." first, so a listener knows where they are.
+    """The page as text to listen to, in reading order. `detail`: "full" (each panel, then its text),
+    "text" (only the text: for a reader who sees the pictures but can't read the text) or "scene"
+    (only what each panel shows: for a reader who reads the text but can't make out the pictures).
+    "Page 5." first, so a listener knows where they are.
 
     Page 5.
     Panel 1. Two boys stand in the rain.
@@ -860,19 +864,20 @@ def speech_for(data, page, detail="full") -> str:
     """
     out = [f"Page {page + 1}."]
     panels = data.get("panels") or []
-    full = detail != "text"
+    scenes = detail != "text"   # what each panel shows
+    texts = detail != "scene"   # who says what, signs and sounds
     last = None  # who spoke the line just before: the same speaker again isn't named again
     for n, p in enumerate(panels, 1):
-        if full:
+        if scenes:
             head = f"Panel {n}." if len(panels) > 1 else ""
             out.append(" ".join(x for x in (head, _sentence(p.get("scene"))) if x))
             last = None  # after a description, say who speaks again
-        for line in _joined(p.get("lines") or []):
+        for line in _joined(p.get("lines") or []) if texts else ():
             who = (line.get("kind"), line.get("speaker", "").casefold()) if line.get("speaker") else None
             out.append(_sentence(line.get("text")) if who and who == last else _say_line(line))
             last = who
     if len(out) == 1:
-        out.append("No text on this page." if not full else "Nothing to describe on this page.")
+        out.append("No text on this page." if not scenes else "Nothing to describe on this page.")
     return "\n".join(x for x in out if x)
 
 

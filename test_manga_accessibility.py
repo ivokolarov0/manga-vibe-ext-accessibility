@@ -237,6 +237,9 @@ def test_the_same_speaker_is_named_once():
                                       "Haruka says: Nothing.\nPanel 2. Haruka runs.\nHaruka says: Bye.\nHaruka thinks: Hm.")
     # only the text: no description in between, so the next panel goes on without the name
     assert ma.speech_for(data, 0, "text").split("\n")[4:6] == ["Haruka says: Nothing.", "Bye."]
+    # only the pictures: what each panel shows, no text
+    assert ma.speech_for(data, 0, "scene") == "Page 1.\nPanel 1. Haruka waves.\nPanel 2. Haruka runs."
+    assert ma.speech_for({"panels": []}, 0, "scene") == "Page 1.\nNothing to describe on this page."
     # people without a name are never joined: two of them may be two people
     two = {"panels": [{"scene": "", "lines": [line("", "A"), line("", "B")]}]}
     assert ma.speech_for(two, 0, "text") == "Page 1.\nSpeech bubble: A.\nSpeech bubble: B."

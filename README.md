@@ -104,7 +104,7 @@ each page's description by itself, in your own voice and speed.
 | Setting | |
 |---|---|
 | Language | The descriptions are written in this language, and the text is translated into it. Default: English |
-| What is read out | **Everything** (each panel described, then who says what) or **Only the text** (who says what) |
+| What is read out | **Everything** (each panel described, then who says what), **Only the text** (who says what: if you can see the pictures but not read the text) or **Only the pictures** (what each panel shows: if you can read the text but not make out the pictures) |
 | Pages to describe ahead | How many pages after yours are prepared in advance. Default: 4 |
 
 ### Buttons
