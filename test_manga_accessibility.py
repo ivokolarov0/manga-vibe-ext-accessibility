@@ -410,3 +410,18 @@ def test_nobody_is_named_in_a_panel_without_people():
     panel = ma.SCHEMA["properties"]["panels"]["items"]
     assert "people_shown" in panel["required"] and "place" in panel["properties"]["lines"]["items"]["required"]
     assert "people_shown" in ma.NUMBERED["properties"]["panels"]["items"]["required"]
+
+
+def test_text_without_a_bubble_is_nobody_speaking():
+    """Text loose on the art (murmurs, inner thoughts, voices around): read as such, never with a speaker."""
+    import importlib
+    ma = importlib.import_module("manga_accessibility")
+    data = ma.clean({"panels": [
+        {"scene": "Haruka walks home.", "people_shown": True,
+         "lines": [{"kind": "free", "speaker": "Haruka", "place": "bottom", "text": "So tired"},
+                   {"kind": "speech", "speaker": "Haruka", "place": "top", "text": "I'm home"}]}],
+        "summary": ""})
+    assert ma.speech_for(data, 0) == ("Page 1.\nHaruka walks home.\nText without a bubble: So tired.\n"
+                                      "Haruka says: I'm home.")
+    assert "free" in ma.SCHEMA["properties"]["panels"]["items"]["properties"]["lines"]["items"]["properties"]["kind"]["enum"]
+    assert "Only text with no outline at all is free" in ma.describe_prompt("English", "", [], "")
