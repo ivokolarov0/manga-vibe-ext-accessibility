@@ -40,7 +40,7 @@ FIELDS = getattr(Overlay, "__dataclass_fields__", {})
 HAS_NOTE = "note" in FIELDS        # plugin API 4: a quiet line in the reader's top bar
 HAS_SPEECH = "speech" in FIELDS    # plugin API 5: text the reader reads aloud
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 DATA_VERSION = 1          # the format of what is saved per page
 MAX_SIDE = 1600           # pages are shrunk so their longest side is at most this, before they go to Ollama
 OFFLINE_RETRY = 15        # seconds between tries while Ollama can't be reached
@@ -53,6 +53,7 @@ MAX_CHARACTERS = 40       # characters kept per series
 NOW, AHEAD, CHAPTER, SERIES = 0, 1, 2, 3
 
 KINDS = ("speech", "thought", "narration", "sign", "sound")
+PLACES = ("right", "left", "top", "bottom", "middle")  # where a bubble is in its panel
 
 
 class MangaAccessibility(Plugin):
@@ -479,13 +480,15 @@ SCHEMA = {
         "panels": {"type": "array", "items": {"type": "object", "properties": {
             "box": BOX,
             "scene": {"type": "string"},
+            "people_shown": {"type": "boolean"},
             "lines": {"type": "array", "items": {"type": "object", "properties": {
                 "original": {"type": "string"},
                 "kind": {"type": "string", "enum": list(KINDS)},
+                "place": {"type": "string", "enum": list(PLACES)},
                 "speaker": {"type": "string"},
                 "text": {"type": "string"}},
-                "required": ["original", "kind", "speaker", "text"]}}},
-            "required": ["box", "scene", "lines"]}},
+                "required": ["original", "kind", "place", "speaker", "text"]}}},
+            "required": ["box", "scene", "people_shown", "lines"]}},
         "summary": {"type": "string"},
         "characters": {"type": "array", "items": {"type": "object", "properties": {
             "name": {"type": "string"}, "look": {"type": "string"}},
@@ -498,7 +501,7 @@ NUMBERED = json.loads(json.dumps(SCHEMA))  # a page whose panels were found: the
 _panel = NUMBERED["properties"]["panels"]["items"]
 _panel["properties"] = {"panel": {"type": "integer"},
                         **{k: v for k, v in _panel["properties"].items() if k != "box"}}
-_panel["required"] = ["panel", "scene", "lines"]
+_panel["required"] = ["panel"] + [k for k in _panel["required"] if k != "box"]
 
 _NO_THINK = set()  # Ollama servers that refused "think" (older versions): asked once, then left out
 
@@ -596,13 +599,18 @@ def describe_prompt(language, info, characters, before, order="rtl", frames=0) -
     parts += [
         "- scene: one or two plain sentences on what the panel shows: who is there, what they do, their "
         "faces and the place. Say what matters for the story; don't repeat the dialogue.",
+        "- people_shown: true if at least one character (a person, or a small face) is drawn in this "
+        "panel; false if it shows only bubbles, a place or a thing.",
         "- lines: every piece of text in the panel, in reading order:",
         "  - original: the text exactly as written, in its own language and script.",
         "  - kind: speech (a speech bubble), thought (a thought bubble, often cloud-shaped), narration "
         "(a box with the narrator's text), sign (text that is part of the picture, like a sign or a "
         "letter), or sound (a sound effect drawn into the art).",
-        "  - speaker: who says or thinks it: the character's name if you know it, otherwise a short "
-        "description (\"the boy on the left\"). Empty for narration, signs and sounds.",
+        "  - place: where the bubble or text is in the panel: right, left, top, bottom or middle.",
+        "  - speaker: who says or thinks it, ONLY when that character is drawn in this same panel (the "
+        "bubble points to them): their name if you know it, otherwise a short description (\"the boy on "
+        "the left\"). Never guess the speaker from another panel: when the one speaking isn't drawn in "
+        "this panel, leave it empty. Empty for narration, signs and sounds.",
         f"  - text: the text in {language}, translated if it's in another language. For a sound, write "
         f"the sound and what it means, e.g. \"BOOM (an explosion)\".",
         "",
@@ -807,8 +815,9 @@ def _text(value, limit=600):
 
 def clean(answer) -> dict:
     """The model's answer, kept to what we use: {"panels": [{"box", "scene", "lines": [{"kind",
-    "speaker", "text", "original"}]}], "summary", "characters"}. A panel's box is (x, y, w, h) fractions,
-    used only to put the panels in reading order."""
+    "speaker", "place", "text", "original"}]}], "summary", "characters"}. A panel's box is (x, y, w, h)
+    fractions, used only to put the panels in reading order. In a panel with nobody drawn in it, nobody
+    is named as the speaker: the model would guess from the panels around it."""
     if not isinstance(answer, dict):
         raise RuntimeError("The model's answer wasn't a description")
     panels = []
@@ -816,6 +825,7 @@ def clean(answer) -> dict:
         if not isinstance(p, dict):
             continue
         lines = []
+        nobody = p.get("people_shown") is False
         for line in p.get("lines") or []:
             if not isinstance(line, dict):
                 continue
@@ -823,8 +833,9 @@ def clean(answer) -> dict:
             if not text:
                 continue
             kind = line.get("kind") if line.get("kind") in KINDS else "speech"
-            lines.append({"kind": kind, "speaker": _text(line.get("speaker"), 80) if kind in ("speech", "thought") else "",
-                          "text": text, "original": _text(line.get("original"))})
+            speaker = _text(line.get("speaker"), 80) if kind in SAYS and not nobody else ""
+            lines.append({"kind": kind, "speaker": speaker, "text": text, "original": _text(line.get("original")),
+                          "place": line.get("place") if line.get("place") in PLACES else ""})
         scene = _text(p.get("scene"))
         if scene or lines:
             panel = {"box": _box(p.get("box")), "scene": scene, "lines": lines}
@@ -884,9 +895,13 @@ def _joined(lines) -> list:
 
 def _say_line(line) -> str:
     text, kind, who = line.get("text", ""), line.get("kind"), line.get("speaker", "")
-    if kind in SAYS:
-        who = who[:1].upper() + who[1:] if who else "Someone"
-        return f"{who} {SAYS[kind]}: {_sentence(text)}"
+    if kind in SAYS and who:
+        return f"{who[:1].upper() + who[1:]} {SAYS[kind]}: {_sentence(text)}"
+    if kind in SAYS:  # who says it isn't drawn here: where the bubble is, not a guess
+        bubble = "Speech bubble" if kind == "speech" else "Thought bubble"
+        place = line.get("place")
+        where = " in the middle" if place == "middle" else f" on the {place}" if place else ""
+        return f"{bubble}{where}: {_sentence(text)}"
     label = {"narration": "Narration", "sign": "Written", "sound": "Sound"}.get(kind, "Text")
     return f"{label}: {_sentence(text)}"
 

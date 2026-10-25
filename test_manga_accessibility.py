@@ -205,7 +205,7 @@ def test_clean_and_speech_from_odd_answers():
     data = module.clean({"panels": [{"scene": "", "lines": [{"text": " Hi ", "kind": "shout", "speaker": ""}]}],
                          "summary": "s"})
     assert data["panels"][0]["lines"][0]["kind"] == "speech"
-    assert module.speech_for(data, 4) == "Page 5.\nSomeone says: Hi."
+    assert module.speech_for(data, 4) == "Page 5.\nSpeech bubble: Hi."
     assert module.speech_for({"panels": []}, 0) == "Page 1.\nNothing to describe on this page."
     assert module._url("pc:11434/v1/") == "http://pc:11434"
 
@@ -239,7 +239,7 @@ def test_the_same_speaker_is_named_once():
     assert ma.speech_for(data, 0, "text").split("\n")[4:6] == ["Haruka says: Nothing.", "Bye."]
     # people without a name are never joined: two of them may be two people
     two = {"panels": [{"scene": "", "lines": [line("", "A"), line("", "B")]}]}
-    assert ma.speech_for(two, 0, "text") == "Page 1.\nSomeone says: A.\nSomeone says: B."
+    assert ma.speech_for(two, 0, "text") == "Page 1.\nSpeech bubble: A.\nSpeech bubble: B."
 
 
 def test_names_and_descriptions():
@@ -383,3 +383,27 @@ def test_descriptions_go_to_the_panels_found():
     assert "panel" in ma.NUMBERED["properties"]["panels"]["items"]["required"]
     assert "outlined in red" in ma.describe_prompt("English", "", [], "", "rtl", 3)
     assert "outlined in red" not in ma.describe_prompt("English", "", [], "", "rtl", 0)
+
+
+def test_nobody_is_named_in_a_panel_without_people():
+    """A panel with only bubbles: the model would guess the speaker from the panel below. Where the
+    bubble is, instead."""
+    import importlib
+    ma = importlib.import_module("manga_accessibility")
+    data = ma.clean({"panels": [
+        {"scene": "An empty street.", "people_shown": False,
+         "lines": [{"kind": "speech", "speaker": "Haruka", "place": "right", "text": "Wait"},
+                   {"kind": "thought", "speaker": "Taro", "place": "middle", "text": "Hm"},
+                   {"kind": "sound", "speaker": "", "place": "left", "text": "BANG"}]},
+        {"scene": "Haruka and Taro.", "people_shown": True,
+         "lines": [{"kind": "speech", "speaker": "Haruka", "place": "left", "text": "Here"},
+                   {"kind": "speech", "speaker": "", "place": "nowhere", "text": "Who?"}]}],
+        "summary": ""})
+    assert ma.speech_for(data, 0) == (
+        "Page 1.\nPanel 1. An empty street.\nSpeech bubble on the right: Wait.\n"
+        "Thought bubble in the middle: Hm.\nSound: BANG.\n"
+        "Panel 2. Haruka and Taro.\nHaruka says: Here.\nSpeech bubble: Who?")
+    # the model is asked for both
+    panel = ma.SCHEMA["properties"]["panels"]["items"]
+    assert "people_shown" in panel["required"] and "place" in panel["properties"]["lines"]["items"]["required"]
+    assert "people_shown" in ma.NUMBERED["properties"]["panels"]["items"]["required"]
