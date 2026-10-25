@@ -56,7 +56,7 @@ def plugin(client, monkeypatch):
     module = sys.modules[type(p).__module__]
     fake = FakeOllama()
     monkeypatch.setattr(module, "_http", lambda timeout: httpx.Client(transport=httpx.MockTransport(fake)))
-    client.put(f"/api/plugins/{PID}/settings", json={"ollama_url": "pc:11434", "detail": "", "show": ""})
+    client.put(f"/api/plugins/{PID}/settings", json={"ollama_url": "pc:11434", "detail": ""})
     forget(p)
     yield p, module, fake
     p.run_global_action(None, "stop")
@@ -102,10 +102,7 @@ def test_describes_a_page(client, plugin):
     book = first_book(client)
     layer = wait_ready(client, book["id"], 0)
     assert layer["message"] == ""
-    # boxes: the speech bubble only (the sound's box is empty, the thought has none)
-    assert [(b["text"], b["cls"]) for b in layer["boxes"]] == [("Hey, are you listening?", "ma-speech")]
-    assert layer["boxes"][0]["title"] == "Haruka · ねえ、聞いてる？"
-    assert (layer["boxes"][0]["x"], layer["boxes"][0]["w"]) == (0.7, 0.2)
+    assert layer["boxes"] == []  # nothing is drawn over the page
     if module.HAS_SPEECH:
         assert layer["speech"] == (
             "Page 1.\n"
@@ -120,6 +117,9 @@ def test_describes_a_page(client, plugin):
     image = fake.asked[0]["messages"][0]["images"][0]
     assert image.startswith("/9j/")  # base64 of a JPEG's first bytes
     assert "in English" in fake.asked[0]["messages"][0]["content"]
+    # the model isn't asked where the bubbles are any more
+    line_schema = fake.asked[0]["format"]["properties"]["panels"]["items"]["properties"]["lines"]["items"]
+    assert "box" not in line_schema["properties"]
 
 
 def test_characters_are_kept_per_series(client, plugin):
@@ -140,12 +140,11 @@ def test_characters_are_kept_per_series(client, plugin):
     assert any("The page before: Haruka talks to a boy in the rain." in q for q in later)
 
 
-def test_text_only_and_nothing_on_the_page(client, plugin):
+def test_text_only(client, plugin):
     p, module, fake = plugin
-    client.put(f"/api/plugins/{PID}/settings", json={"detail": "text", "show": "nothing"})
+    client.put(f"/api/plugins/{PID}/settings", json={"detail": "text"})
     book = first_book(client)
     layer = wait_ready(client, book["id"], 0)
-    assert layer["boxes"] == []
     if module.HAS_SPEECH:
         assert layer["speech"] == ("Page 1.\nHaruka says: Hey, are you listening?\nSound: ZAAA (heavy rain).\n"
                                    "The boy thinks: Not again.")
@@ -195,7 +194,7 @@ def test_test_connection(client, plugin):
     assert "can't see pictures" in client.post(f"/api/plugins/{PID}/actions/test").json()["message"]
 
 
-def test_boxes_and_speech_from_odd_answers():
+def test_clean_and_speech_from_odd_answers():
     """The model's numbers and words, cleaned up without MangaVibe."""
     import importlib
     module = importlib.import_module("manga_accessibility")

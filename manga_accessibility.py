@@ -13,9 +13,9 @@ database, so each page is described only once.
 What the reader gets:
   - `speech`: the page as plain text in reading order. MangaVibe reads it aloud ("Read aloud" in the
     reader options) and hands it to screen readers (TalkBack, NVDA, VoiceOver). Needs MangaVibe with
-    plugin API 5; older versions show the boxes only.
-  - boxes over the speech bubbles with the text in large, clean letters (the "Show on the page" setting)
+    plugin API 5.
   - `note`: a one-line summary of the page in the top bar
+Nothing is drawn over the page itself.
 
 The characters the model names are kept per series (plugin API 4), and every page is described with
 that list and the summary of the page before, so the same character keeps the same name.
@@ -33,13 +33,13 @@ import time
 import httpx
 
 from app.models import Book, Series
-from app.plugins import Action, Box, Overlay, Plugin, SettingDef
+from app.plugins import Action, Overlay, Plugin, SettingDef
 
 FIELDS = getattr(Overlay, "__dataclass_fields__", {})
 HAS_NOTE = "note" in FIELDS        # plugin API 4: a quiet line in the reader's top bar
 HAS_SPEECH = "speech" in FIELDS    # plugin API 5: text the reader reads aloud
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 DATA_VERSION = 1          # the format of what is saved per page
 MAX_SIDE = 1600           # pages are shrunk so their longest side is at most this, before they go to Ollama
 OFFLINE_RETRY = 15        # seconds between tries while Ollama can't be reached
@@ -75,10 +75,6 @@ class MangaAccessibility(Plugin):
         SettingDef("detail", "What is read out", default="full",
                    options=[("full", "Everything: what each panel shows, and who says what"),
                             ("text", "Only the text: who says what")]),
-        SettingDef("show", "Show on the page", default="text",
-                   options=[("text", "The text over the bubbles, in large letters"),
-                            ("nothing", "Nothing (only read aloud)")],
-                   help="The bubbles' places are the model's guess: on a busy page a box can be a little off"),
         SettingDef("ahead", "Pages to describe ahead", default="4",
                    help="Pages after the one you're reading that are described in advance"),
     ]
@@ -88,14 +84,6 @@ class MangaAccessibility(Plugin):
                       confirm="Delete the saved descriptions of every book in this series?")]
     book_actions = [Action("chapter", "Describe this chapter"),
                     Action("again", "Describe this chapter again")]
-    css = """
-.ov-box.ov-manga-accessibility { border-radius: 12px; font-family: Verdana, Tahoma, sans-serif; font-weight: 600;
-  line-height: 1.25; box-shadow: 0 0 0 2px #fff; }
-.ov-box.ma-thought { font-style: italic; }
-.ov-box.ma-narration, .ov-box.ma-sign { border-radius: 4px; }
-.ov-box.ma-failed { --ov-bg: #000; --ov-outline: #000; color: #fff; border-radius: 6px; }
-"""
-
     def __init__(self):
         self.lock = threading.Lock()
         self.heap = []                      # (priority, order, book_id, page)
@@ -124,8 +112,7 @@ class MangaAccessibility(Plugin):
         if data.get("error"):
             return overlay(message=f"Couldn't describe this page: {data['error']}",
                            speech=f"Page {page + 1}. This page couldn't be described.")
-        boxes = boxes_for(data) if ctx.setting("show") != "nothing" else []
-        return overlay(boxes=boxes, note=data.get("summary", ""),
+        return overlay(note=data.get("summary", ""),
                        speech=speech_for(data, page, ctx.setting("detail")))
 
     def book_badges(self, ctx, books):
@@ -368,9 +355,8 @@ SCHEMA = {
                 "original": {"type": "string"},
                 "kind": {"type": "string", "enum": list(KINDS)},
                 "speaker": {"type": "string"},
-                "text": {"type": "string"},
-                "box": BOX},
-                "required": ["original", "kind", "speaker", "text", "box"]}}},
+                "text": {"type": "string"}},
+                "required": ["original", "kind", "speaker", "text"]}}},
             "required": ["box", "scene", "lines"]}},
         "summary": {"type": "string"},
         "characters": {"type": "array", "items": {"type": "object", "properties": {
@@ -456,7 +442,6 @@ def describe_prompt(language, info, characters, before, order="rtl") -> str:
         "description (\"the boy on the left\"). Empty for narration, signs and sounds.",
         f"  - text: the text in {language}, translated if it's in another language. For a sound, write "
         f"the sound and what it means, e.g. \"BOOM (an explosion)\".",
-        "  - box: where the bubble or text is, [x1, y1, x2, y2] on the same 0-1000 scale.",
         "",
         "summary: one sentence on what happens on this page.",
         "characters: the characters on this page whose name you know, each with a short description of "
@@ -608,7 +593,8 @@ def _text(value, limit=600):
 
 def clean(answer) -> dict:
     """The model's answer, kept to what we use: {"panels": [{"box", "scene", "lines": [{"kind",
-    "speaker", "text", "original", "box"}]}], "summary", "characters"}. Boxes are (x, y, w, h) fractions."""
+    "speaker", "text", "original"}]}], "summary", "characters"}. A panel's box is (x, y, w, h) fractions,
+    used only to put the panels in reading order."""
     if not isinstance(answer, dict):
         raise RuntimeError("The model's answer wasn't a description")
     panels = []
@@ -624,7 +610,7 @@ def clean(answer) -> dict:
                 continue
             kind = line.get("kind") if line.get("kind") in KINDS else "speech"
             lines.append({"kind": kind, "speaker": _text(line.get("speaker"), 80) if kind in ("speech", "thought") else "",
-                          "text": text, "original": _text(line.get("original")), "box": _box(line.get("box"))})
+                          "text": text, "original": _text(line.get("original"))})
         scene = _text(p.get("scene"))
         if scene or lines:
             panels.append({"box": _box(p.get("box")), "scene": scene, "lines": lines})
@@ -692,21 +678,6 @@ def _sentence(text) -> str:
     """Ends with a full stop (or ! ?), so a speech engine pauses between lines."""
     text = str(text or "").strip()
     return text if not text or text[-1] in ".!?…。！？\"'”’" else text + "."
-
-
-def boxes_for(data) -> list:
-    """The text of each bubble over the bubble, in reading order. Lines without a usable box are left out
-    (they're still read aloud)."""
-    boxes = []
-    for p in data.get("panels") or []:
-        for line in p.get("lines") or []:
-            b = line.get("box")
-            if not b:
-                continue
-            who = line.get("speaker") or line.get("kind", "")
-            title = " · ".join(x for x in (who, line.get("original", "")) if x)
-            boxes.append(Box(*b, text=line["text"], title=title, cls=f"ma-{line.get('kind', 'speech')}"))
-    return boxes
 
 
 def test_connection(ctx) -> str:
