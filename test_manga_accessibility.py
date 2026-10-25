@@ -301,3 +301,85 @@ def test_signs_and_sounds_next_to_each_other_are_one_line():
                                                {"kind": "sound", "speaker": "", "text": "BAM"},
                                                {"kind": "sound", "speaker": "", "text": "BAM"}]}]}
     assert ma.speech_for(data, 0, "text") == "Page 1.\nWritten: Oden, Beef, Udon.\nSound: BAM."
+
+
+def test_text_in_a_corner_is_part_of_its_panel():
+    """A small model gives text without a bubble (or a small face) as a panel of its own: it goes back
+    into the panel it is drawn in."""
+    import importlib
+    ma = importlib.import_module("manga_accessibility")
+    line = lambda text: {"kind": "speech", "speaker": "", "text": text, "original": ""}  # noqa: E731
+    top = {"box": [0.0, 0.0, 1.0, 0.5], "scene": "A girl smiles.", "lines": [line("Alive!")]}
+    corner = {"box": [0.8, 0.35, 0.15, 0.12], "scene": "A small worried face.", "lines": [line("Did we win?")]}
+    bottom = {"box": [0.0, 0.5, 1.0, 0.5], "scene": "Two friends sit.", "lines": [line("We did.")]}
+    out = ma.fix_panels([top, corner, bottom])
+    assert [p["scene"] for p in out] == ["A girl smiles. A small worried face.", "Two friends sit."]
+    assert [x["text"] for x in out[0]["lines"]] == ["Alive!", "Did we win?"]
+    # only text, outside every frame (in the gutter): to the nearest panel
+    gutter = {"box": [0.0, 0.48, 0.3, 0.03], "scene": "", "lines": [line("Later...")]}
+    assert len(ma.fix_panels([top, gutter, bottom])) == 2
+    # real panels stay as they are, and so does a panel without a place
+    assert ma.fix_panels([top, bottom]) == [top, bottom]
+    assert len(ma.fix_panels([top, {"box": None, "scene": "x", "lines": []}, bottom])) == 3
+
+
+def drawn_page(panels, size=(800, 1200)):
+    """A white page with a framed, busy picture (a dark grid on grey tone) at each (x1, y1, x2, y2)."""
+    from PIL import Image, ImageDraw
+    im = Image.new("RGB", size, "white")
+    d = ImageDraw.Draw(im)
+    for x1, y1, x2, y2 in panels:
+        d.rectangle([x1, y1, x2, y2], fill=(150, 150, 150), outline="black", width=3)
+        for x in range(x1 + 10, x2, 23):
+            d.line([x, y1, x, y2], fill="black", width=2)
+        for y in range(y1 + 7, y2, 31):
+            d.line([x1, y, x2, y], fill="black", width=2)
+    return im
+
+
+def test_panels_are_found_in_the_picture():
+    import importlib
+    import io
+    from PIL import Image, ImageDraw
+    ma = importlib.import_module("manga_accessibility")
+    # a wide panel on top, two side by side below; a white bubble across the gutter between those two
+    im = drawn_page([(30, 30, 770, 500), (30, 530, 390, 1170), (410, 530, 770, 1170)])
+    ImageDraw.Draw(im).ellipse([340, 700, 460, 820], fill="white", outline="black", width=3)
+    found = sorted(ma.find_frames(im), key=lambda b: (b[1], b[0]))
+    assert len(found) == 3
+    assert [round(v, 2) for v in found[0]] == [0.04, 0.03, 0.93, 0.39]
+    # in manga order the right one of the two comes first; they're numbered on the picture for the model
+    out = io.BytesIO()
+    im.save(out, "PNG")
+    picture, frames = ma.prepare(out.getvalue(), "rtl")
+    assert [round(f[0], 2) for f in frames] == [0.04, 0.51, 0.04]
+    assert Image.open(io.BytesIO(picture)).getpixel((40, 40))[0] > 200  # the red number in panel 1
+    # a page without gutters (one picture over all of it): nothing found, the model finds the panels
+    _, frames = ma.prepare(_png(drawn_page([(0, 0, 800, 1200)])), "rtl")
+    assert frames == []
+
+
+def _png(im):
+    import io
+    out = io.BytesIO()
+    im.save(out, "PNG")
+    return out.getvalue()
+
+
+def test_descriptions_go_to_the_panels_found():
+    import importlib
+    ma = importlib.import_module("manga_accessibility")
+    frames = [[0.5, 0, 0.5, 0.5], [0, 0, 0.5, 0.5], [0, 0.5, 1, 0.5]]
+    line = lambda text: {"kind": "speech", "speaker": "", "text": text, "original": ""}  # noqa: E731
+    answer = [{"n": 1, "scene": "A girl.", "lines": [line("Hi")], "box": None},
+              {"n": 1, "scene": "A small face in the corner.", "lines": [line("Hey")], "box": None},  # split off
+              {"n": 3, "scene": "A street.", "lines": [], "box": None},                               # 2 is empty
+              {"n": 99, "scene": "", "lines": [line("Bye")], "box": None}]                            # no such
+    out = ma.panels_for(answer, frames)
+    assert [p["scene"] for p in out] == ["A girl. A small face in the corner.", "A street."]
+    assert [[x["text"] for x in p["lines"]] for p in out] == [["Hi", "Hey"], ["Bye"]]
+    assert out[1]["box"] == [0, 0.5, 1, 0.5] and "n" not in out[0]
+    # the model is asked for the panels' numbers
+    assert "panel" in ma.NUMBERED["properties"]["panels"]["items"]["required"]
+    assert "outlined in red" in ma.describe_prompt("English", "", [], "", "rtl", 3)
+    assert "outlined in red" not in ma.describe_prompt("English", "", [], "", "rtl", 0)
