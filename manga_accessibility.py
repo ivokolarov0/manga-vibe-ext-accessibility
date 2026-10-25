@@ -40,7 +40,7 @@ FIELDS = getattr(Overlay, "__dataclass_fields__", {})
 HAS_NOTE = "note" in FIELDS        # plugin API 4: a quiet line in the reader's top bar
 HAS_SPEECH = "speech" in FIELDS    # plugin API 5: text the reader reads aloud
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 DATA_VERSION = 1          # the format of what is saved per page
 MAX_SIDE = 1600           # pages are shrunk so their longest side is at most this, before they go to Ollama
 OFFLINE_RETRY = 15        # seconds between tries while Ollama can't be reached
@@ -52,7 +52,7 @@ MAX_CHARACTERS = 40       # characters kept per series
 # queue priorities: lower goes first
 NOW, AHEAD, CHAPTER, SERIES = 0, 1, 2, 3
 
-KINDS = ("speech", "thought", "narration", "sign", "sound")
+KINDS = ("speech", "thought", "narration", "sign", "sound", "free")  # free: text without a bubble
 PLACES = ("right", "left", "top", "bottom", "middle")  # where a bubble is in its panel
 
 
@@ -70,8 +70,8 @@ class MangaAccessibility(Plugin):
         SettingDef("ollama_url", "Ollama server",
                    help="The address of the computer that runs Ollama, e.g. http://192.168.1.50:11434"),
         SettingDef("model", "Model", default="gemma4",
-                   help="A model that can see pictures. gemma4 (8 GB graphics memory) is fast; "
-                        "gemma4:12b gets the order of the panels right more often."),
+                   help="A model that can see pictures. gemma4 (8 GB graphics memory) is fast; gemma4:12b "
+                        "(12 GB) makes fewer mistakes; gemma4:26b (16 GB) makes the fewest."),
         SettingDef("language", "Language", default="English",
                    help="The descriptions are written in this language, and the text is translated into it"),
         SettingDef("detail", "What is read out", default="full",
@@ -606,12 +606,19 @@ def describe_prompt(language, info, characters, before, order="rtl", frames=0) -
         "  - original: the text exactly as written, in its own language and script.",
         "  - kind: speech (a speech bubble), thought (a thought bubble, often cloud-shaped), narration "
         "(a box with the narrator's text), sign (text that is part of the picture, like a sign or a "
-        "letter), or sound (a sound effect drawn into the art).",
+        "letter), sound (a sound effect drawn into the art), or free (text written straight on the art "
+        "with no outline around it).",
+        "    A bubble is any text with an outline around it, smooth, rough, jagged or wavy, usually with a "
+        "tail: that is speech (or thought). Only text with no outline at all is free. Such text is almost "
+        "never a character talking: it's a sound, background noise or voices, a narrator, or someone's "
+        "inner thoughts. Never make it speech: use sound for a noise, narration for a narrator's words, "
+        "free for anything else (inner thoughts, murmurs, words floating beside someone), and don't say "
+        "who it is from.",
         "  - place: where the bubble or text is in the panel: right, left, top, bottom or middle.",
         "  - speaker: who says or thinks it, ONLY when that character is drawn in this same panel (the "
         "bubble points to them): their name if you know it, otherwise a short description (\"the boy on "
         "the left\"). Never guess the speaker from another panel: when the one speaking isn't drawn in "
-        "this panel, leave it empty. Empty for narration, signs and sounds.",
+        "this panel, leave it empty. Empty for narration, signs, sounds and free text.",
         f"  - text: the text in {language}, translated if it's in another language. For a sound, write "
         f"the sound and what it means, e.g. \"BOOM (an explosion)\".",
         "",
@@ -907,7 +914,8 @@ def _say_line(line) -> str:
         place = line.get("place")
         where = " in the middle" if place == "middle" else f" on the {place}" if place else ""
         return f"{bubble}{where}: {_sentence(text)}"
-    label = {"narration": "Narration", "sign": "Written", "sound": "Sound"}.get(kind, "Text")
+    label = {"narration": "Narration", "sign": "Written", "sound": "Sound",
+             "free": "Text without a bubble"}.get(kind, "Text")
     return f"{label}: {_sentence(text)}"
 
 

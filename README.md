@@ -29,7 +29,8 @@ account, no subscription, and your manga never leaves your home network.
 - **A computer with a graphics card** on the same home network (or the same computer that runs
   MangaVibe), switched on while you read new chapters:
   - 8 GB of graphics memory or more for `gemma4` (Mac: Apple Silicon with 16 GB of memory)
-  - 12 GB or more for `gemma4:12b`, which gets the order of the panels right more often
+  - 12 GB or more for `gemma4:12b`
+  - 16 GB or more for `gemma4:26b`, the best one (see [Which model](#which-model))
 
 ## Setup (about 10 minutes)
 
@@ -47,7 +48,7 @@ ollama pull gemma4
 ```
 
 It downloads about 7 GB. Wait until it says **success**. (With a big graphics card, use
-`ollama pull gemma4:12b` instead.)
+`ollama pull gemma4:26b` instead: see [Which model](#which-model).)
 
 ### 3. Let MangaVibe talk to Ollama
 
@@ -76,7 +77,7 @@ You'll need the computer's address on your network. On Windows, run `ipconfig` a
 3. In MangaVibe: **Settings → Plugins → Reload plugins**.
 4. Open **Manga Accessibility → Settings** and fill in:
    - **Ollama server:** `http://192.168.1.50:11434` (your computer's address, port `11434`)
-   - **Model:** `gemma4` (or `gemma4:12b`)
+   - **Model:** `gemma4` (or `gemma4:12b`, `gemma4:26b`)
 5. Press **Test connection**. It should say **Connected: gemma4 is ready**.
 
 ## Reading
@@ -118,13 +119,15 @@ The series list shows how far each chapter is, e.g. **Described 12/40**.
 ## Good to know
 
 - **The model can make mistakes**: sometimes it puts two panels in the wrong order, misreads a word or
-  sees something that isn't there. `gemma4:12b` makes fewer mistakes than `gemma4`, but it's slower.
+  sees something that isn't there, or says a line is from the wrong character. `gemma4:26b` makes
+  the fewest mistakes (see [Which model](#which-model)).
 - **Characters keep their names:** when a name is said on a page, the plugin remembers what that
   character looks like, so they're called by their name on the following pages. When one character
   says several bubbles in a row, the name is said once.
 - **No guessing who speaks:** a speaker is named only when they're drawn in the same panel. In a panel
   with only bubbles (nobody drawn in it), you hear where the bubble is instead: "Speech bubble on the
-  right: …".
+  right: …". Text without a bubble (murmurs, inner thoughts, voices in the background) is never given
+  to a character: you hear "Text without a bubble: …", or "Sound: …" and "Narration: …".
 - **The panels are found in the picture:** before a page goes to the model, the plugin finds its panels
   from the white (or black) lines between them and numbers them, so text in a corner or a small face
   next to a bubble stays part of its panel. On a page with slanted panels or one picture across the
@@ -140,6 +143,30 @@ The series list shows how far each chapter is, e.g. **Described 12/40**.
   for how long. A page that gets no answer in 10 minutes, or whose answer never ends (a model repeating
   itself), is tried once more and then skipped.
 - A page takes about 5–15 seconds, depending on the model and the graphics card.
+
+## Which model
+
+Tested on a whole chapter (19 pages, Japanese, read right to left) and an English page with bubbles
+across two panels and text without bubbles, on an RTX 5070 Ti (16 GB), with the pages described one
+after another as in the reader (the characters and the page before carried over).
+
+| Model | Download | Graphics memory | Time per page | Text | Who is who | Keeps the characters' names |
+|---|---|---|---|---|---|---|
+| **`gemma4:26b`** (best) | 16 GB | 16 GB (a part runs on the processor, still fast) | ~8 s | Whole sentences, translated right | Boys and girls right | Yes |
+| `gemma4:12b` | 7.7 GB | 12 GB | ~10 s | Often cuts a line into pieces that make no sense ("Who are. / you here. / doing?"); 1 page of 19 failed (it repeated itself) | Sometimes wrong | Partly |
+| `qwen3-vl:8b-instruct` | 6 GB | 8 GB | ~5 s | Good, now and then a broken character | **Often wrong** (calls girls boys) | No: it named nobody |
+| `qwen3-vl:8b` | 6 GB | 8 GB | — | Doesn't work: this is the "thinking" version, it never finishes a page | — | — |
+| `gemma4` | 6.6 GB | 8 GB | fastest | Not in this test; makes more mistakes than `gemma4:12b` | | |
+
+`gemma4:26b` is a "mixture of experts" model: only a small part of it works on each word, so it's
+faster than `gemma4:12b` although it's bigger.
+
+All of them still sometimes name the wrong speaker, so a line is given to a character only when
+they're drawn in the same panel (see [Good to know](#good-to-know)). Text without a bubble (inner
+thoughts, murmurs, voices around) is never given to a character: on the English page this got
+17 of 20 checks right, against 9 of 20 before. A narrator's box in italic lettering is still sometimes
+read as a bubble, and manga whose bubbles have wavy edges (like Dandadan) sometimes get "Text without
+a bubble" for a bubble.
 
 ## Try it without MangaVibe
 
