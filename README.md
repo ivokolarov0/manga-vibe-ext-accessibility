@@ -15,8 +15,8 @@ The boy on the right says: Did you bring an umbrella?
 Sound: ZAAA (heavy rain).
 ```
 
-The text of the bubbles is also shown over the bubbles in large, clean letters, translated into your
-language if the manga is in another one.
+Nothing is drawn over the page: the plugin only looks at the picture and its text and tells you what
+happens. The text is translated into your language if the manga is in another one.
 
 **Free and private.** Everything runs on your own computer with [Ollama](https://ollama.com). No
 account, no subscription, and your manga never leaves your home network.
@@ -105,7 +105,6 @@ each page's description by itself, in your own voice and speed.
 |---|---|
 | Language | The descriptions are written in this language, and the text is translated into it. Default: English |
 | What is read out | **Everything** (each panel described, then who says what) or **Only the text** (who says what) |
-| Show on the page | **The text over the bubbles** in large letters, or **Nothing** (only read aloud) |
 | Pages to describe ahead | How many pages after yours are prepared in advance. Default: 4 |
 
 ### Buttons
@@ -120,8 +119,6 @@ The series list shows how far each chapter is, e.g. **Described 12/40**.
 
 - **The model can make mistakes**: sometimes it puts two panels in the wrong order, misreads a word or
   sees something that isn't there. `gemma4:12b` makes fewer mistakes than `gemma4`, but it's slower.
-- **The boxes over the bubbles are the model's guess** of where the bubbles are; on a busy page one can
-  be a little off. Everything is still read out in the right order.
 - **Characters keep their names:** when a name is said on a page, the plugin remembers what that
   character looks like, so they're called by their name on the following pages. When one character
   says several bubbles in a row, the name is said once.
