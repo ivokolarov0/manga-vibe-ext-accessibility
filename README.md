@@ -122,6 +122,10 @@ The series list shows how far each chapter is, e.g. **Described 12/40**.
 - **Characters keep their names:** when a name is said on a page, the plugin remembers what that
   character looks like, so they're called by their name on the following pages. When one character
   says several bubbles in a row, the name is said once.
+- **The panels are found in the picture:** before a page goes to the model, the plugin finds its panels
+  from the white (or black) lines between them and numbers them, so text in a corner or a small face
+  next to a bubble stays part of its panel. On a page with slanted panels or one picture across the
+  whole page, the model finds the panels itself.
 - **Panels in the right order:** pages are read the way the series reads in MangaVibe. A series matched
   on AniList or MangaUpdates as a manga from Japan reads right to left (also when it's in English); a
   manhwa, manhua or western comic left to right. A series that isn't matched follows its library

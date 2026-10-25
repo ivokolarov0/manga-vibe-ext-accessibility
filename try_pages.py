@@ -66,9 +66,10 @@ def main():
     characters, before = [], ""
     for n, path in enumerate(args.pages):
         start = time.monotonic()
-        prompt = ma.describe_prompt(args.language, "", characters, before, args.order)
-        data = ma.clean(ma.ask(ctx, prompt, ma.to_jpeg(path.read_bytes())))
-        data["panels"] = ma.order_panels(data["panels"], args.order)
+        picture, frames = ma.prepare(path.read_bytes(), args.order)
+        prompt = ma.describe_prompt(args.language, "", characters, before, args.order, len(frames))
+        data = ma.clean(ma.ask(ctx, prompt, picture, numbered=bool(frames)))
+        data["panels"] = ma.panels_for(data["panels"], frames, args.order)
         for c in data.pop("characters", []):  # the same rule as the plugin: only real names
             name = str(c.get("name") or "").strip() if isinstance(c, dict) else ""
             if ma.is_name(name) and name.casefold() not in {x["name"].casefold() for x in characters}:
