@@ -122,6 +122,9 @@ The series list shows how far each chapter is, e.g. **Described 12/40**.
 - **Characters keep their names:** when a name is said on a page, the plugin remembers what that
   character looks like, so they're called by their name on the following pages. When one character
   says several bubbles in a row, the name is said once.
+- **No guessing who speaks:** a speaker is named only when they're drawn in the same panel. In a panel
+  with only bubbles (nobody drawn in it), you hear where the bubble is instead: "Speech bubble on the
+  right: …".
 - **The panels are found in the picture:** before a page goes to the model, the plugin finds its panels
   from the white (or black) lines between them and numbers them, so text in a corner or a small face
   next to a bubble stays part of its panel. On a page with slanted panels or one picture across the
